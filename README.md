@@ -28,36 +28,55 @@ files.
 
 ## Setup
 
+Playlister is managed from its **web UI** — you only need one bit of config to
+start it, then add playlists from the browser.
+
 ### 1. Get a Discord webhook
 
 In your Discord server: **Server Settings → Integrations → Webhooks → New
 Webhook**, pick the channel, and **Copy Webhook URL**.
 
-### 2. Get your playlist share link(s)
+### 2. Configure & start
 
-In the Music app, open the playlist → **⋯ → Share → Copy Link**. You'll get a
-URL like:
+```bash
+cp .env.example .env          # set DISCORD_WEBHOOK_URL — that's the only required value
+npm install && npm run build && npm start
+```
+
+(or with Docker: `docker compose up -d --build`)
+
+### 3. Add playlists in the web UI
+
+Open <http://localhost:8080>. To add a playlist, grab its share link in the
+Music app (**⋯ → Share → Copy Link**) — make sure the playlist is
+shared/public — and paste it in. You'll get a link like:
 
 ```
 https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx
 ```
 
-Make sure the playlist is shared/public.
+The UI validates the link, loads its name and track count immediately, and
+starts watching it. Remove a playlist with one click. The watch list is saved
+to `state.json` and the running bot picks up changes on its next poll — no
+restart needed.
 
-### 3. Configure
+> The UI has no authentication — keep it on localhost or a trusted network, or
+> put it behind a reverse proxy with auth if you expose it.
 
-```bash
-cp .env.example .env
-# then edit .env
-```
+That's it. New songs added to any watched playlist will show up in your Discord
+channel.
+
+## Configuration reference
+
+All configuration is via environment variables (see `.env.example`):
 
 | Variable | Description |
 | --- | --- |
-| `DISCORD_WEBHOOK_URL` | Your Discord channel webhook URL. |
-| `PLAYLISTS` | *Optional.* Seed playlist URLs for the first run only — after that, manage them in the web UI. Leave empty to start with none. |
-| `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
+| `DISCORD_WEBHOOK_URL` | **Required.** Your Discord channel webhook URL. |
 | `WEB_PORT` | Port for the management web UI (default `8080`). |
+| `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
 | `STATE_FILE` | Where the watch list + snapshots are saved (default `./data/state.json`). |
+| `PLAYLISTS` | *Optional.* Seed playlist URLs (comma/newline separated) used only on the **first run** to pre-populate the watch list. After that, manage playlists in the web UI. |
 
 ## Running
 
@@ -69,19 +88,7 @@ npm run build
 npm start
 ```
 
-For development without building:
-
-```bash
-npm run dev
-```
-
-Then open the **web UI** at <http://localhost:8080> to add/remove playlists.
-Pasting a share link validates it, loads its name and track count immediately,
-and starts watching it. The list also persists in `state.json`, so you can seed
-it via `PLAYLISTS` or manage it entirely from the UI.
-
-> The UI has no authentication — keep it on localhost or a trusted network, or
-> put it behind a reverse proxy with auth if you expose it.
+For development without building, use `npm run dev`.
 
 ### With Docker
 
@@ -115,8 +122,8 @@ src/
 
 - **Polling interval:** 5 minutes is a reasonable default. Lower it for faster
   notifications, but be polite to Apple's servers.
-- **Multiple playlists:** add them all to `PLAYLISTS`; each is tracked
-  independently.
+- **Multiple playlists:** add as many as you like in the web UI; each is
+  tracked independently.
 - **Resetting a playlist's baseline:** stop the bot, edit/remove that
   playlist's entry in `state.json`, and restart.
 - **Debug logging:** set `DEBUG=1` in the environment.
