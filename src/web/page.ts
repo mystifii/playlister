@@ -49,12 +49,33 @@ export const PAGE = /* html */ `<!doctype html>
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pending { color: var(--muted); font-style: italic; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; margin-bottom: 24px;
+  }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .status { font-size: 12px; margin-top: 8px; }
+  .status.on { color: #4ad17a; }
+  .status.off { color: #ffb454; }
+  code { background: #000; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header><span class="dot"></span><h1>Playlister</h1></header>
   <p class="sub">Watching Apple Music playlists &middot; new songs are posted to Discord.</p>
+
+  <div class="panel">
+    <h2>Discord notifications</h2>
+    <form id="hook" class="row">
+      <input id="hookUrl" type="text" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" />
+      <button id="hookBtn" type="submit">Save</button>
+      <button id="hookClear" type="button" class="ghost">Clear</button>
+    </form>
+    <div id="hookStatus" class="status"></div>
+  </div>
 
   <form id="add">
     <input id="url" type="text" placeholder="Paste an Apple Music playlist share link…" autocomplete="off" />
@@ -125,6 +146,51 @@ async function remove(id, url) {
   else setMsg("Could not remove playlist.", "err");
 }
 
+async function loadSettings() {
+  const res = await fetch("/api/settings");
+  const s = await res.json();
+  const status = $("hookStatus");
+  if (s.webhookSet) {
+    status.className = "status on";
+    status.innerHTML = "Notifications on · <code>" + esc(s.webhookPreview) + "</code>";
+    $("hookUrl").placeholder = "Paste a new URL to replace it…";
+  } else {
+    status.className = "status off";
+    status.textContent = "No webhook set — notifications are off.";
+    $("hookUrl").placeholder = "https://discord.com/api/webhooks/…";
+  }
+}
+
+$("hook").onsubmit = async (e) => {
+  e.preventDefault();
+  const url = $("hookUrl").value.trim();
+  if (!url) return;
+  $("hookBtn").disabled = true;
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discordWebhookUrl: url }),
+    });
+    const data = await res.json();
+    if (res.ok) { setMsg("Webhook saved.", "ok"); $("hookUrl").value = ""; loadSettings(); }
+    else setMsg(data.error || "Failed to save webhook.", "err");
+  } catch (err) {
+    setMsg("Network error.", "err");
+  } finally {
+    $("hookBtn").disabled = false;
+  }
+};
+
+$("hookClear").onclick = async () => {
+  if (!confirm("Clear the Discord webhook? Notifications will stop.")) return;
+  await fetch("/api/settings", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ discordWebhookUrl: "" }),
+  });
+  setMsg("Webhook cleared.", "ok");
+  loadSettings();
+};
+
 $("add").onsubmit = async (e) => {
   e.preventDefault();
   const url = $("url").value.trim();
@@ -152,6 +218,7 @@ $("add").onsubmit = async (e) => {
 };
 
 load();
+loadSettings();
 setInterval(load, 30000);
 </script>
 </body>

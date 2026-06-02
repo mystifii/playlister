@@ -13,14 +13,20 @@ export interface PlaylistState {
   lastChecked?: string;
 }
 
+export interface Settings {
+  discordWebhookUrl?: string;
+}
+
 export interface AppState {
   /** Configured playlist URLs — the source of truth for what we poll. */
   watched: string[];
   /** Snapshots keyed by playlist id. */
   snapshots: Record<string, PlaylistState>;
+  /** Runtime-editable settings managed from the web UI. */
+  settings: Settings;
 }
 
-const EMPTY_STATE: AppState = { watched: [], snapshots: {} };
+const EMPTY_STATE: AppState = { watched: [], snapshots: {}, settings: {} };
 
 export class Store {
   private state: AppState;
@@ -36,6 +42,7 @@ export class Store {
       return {
         watched: parsed.watched ?? [],
         snapshots: parsed.snapshots ?? {},
+        settings: parsed.settings ?? {},
       };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -97,6 +104,25 @@ export class Store {
     const changed = this.state.watched.length !== before;
     if (changed) this.write();
     return changed;
+  }
+
+  // ---- settings ----
+
+  getWebhookUrl(): string | undefined {
+    return this.state.settings.discordWebhookUrl;
+  }
+
+  setWebhookUrl(url: string | undefined): void {
+    this.state.settings.discordWebhookUrl = url || undefined;
+    this.write();
+  }
+
+  /** Populate the webhook from a seed, only if one isn't already set. */
+  seedWebhookUrl(url: string | undefined): void {
+    if (this.state.settings.discordWebhookUrl || !url) return;
+    this.state.settings.discordWebhookUrl = url;
+    this.write();
+    logger.info("Seeded Discord webhook from config.");
   }
 
   // ---- snapshots ----

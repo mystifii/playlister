@@ -28,54 +28,53 @@ files.
 
 ## Setup
 
-Playlister is managed from its **web UI** — you only need one bit of config to
-start it, then add playlists from the browser.
+Playlister is managed entirely from its **web UI** — no config files required
+to get going.
 
-### 1. Get a Discord webhook
-
-In your Discord server: **Server Settings → Integrations → Webhooks → New
-Webhook**, pick the channel, and **Copy Webhook URL**.
-
-### 2. Configure & start
+### 1. Start it
 
 ```bash
-cp .env.example .env          # set DISCORD_WEBHOOK_URL — that's the only required value
 npm install && npm run build && npm start
 ```
 
 (or with Docker: `docker compose up -d --build`)
 
-### 3. Add playlists in the web UI
+### 2. Open the web UI
 
-Open <http://localhost:8080>. To add a playlist, grab its share link in the
-Music app (**⋯ → Share → Copy Link**) — make sure the playlist is
-shared/public — and paste it in. You'll get a link like:
+Go to <http://localhost:8080>. From there:
 
-```
-https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx
-```
+- **Set your Discord webhook.** In Discord: **Server Settings → Integrations →
+  Webhooks → New Webhook**, pick the channel, **Copy Webhook URL**, and paste
+  it into the *Discord notifications* box. (The stored token is masked in the UI
+  and never sent back to the browser.)
+- **Add playlists.** Grab a playlist's share link in the Music app (**⋯ →
+  Share → Copy Link**) — make sure it's shared/public — and paste it in. It
+  looks like `https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx`.
+  The UI validates the link, loads its name and track count immediately, and
+  starts watching it. Remove a playlist with one click.
 
-The UI validates the link, loads its name and track count immediately, and
-starts watching it. Remove a playlist with one click. The watch list is saved
-to `state.json` and the running bot picks up changes on its next poll — no
-restart needed.
+Both the webhook and the watch list are saved to `state.json`, and the running
+bot picks up changes on its next poll — no restart needed.
 
 > The UI has no authentication — keep it on localhost or a trusted network, or
 > put it behind a reverse proxy with auth if you expose it.
 
 That's it. New songs added to any watched playlist will show up in your Discord
-channel.
+channel. (If no webhook is set yet, the bot still tracks playlists and logs a
+reminder; it just won't post until you add one.)
 
 ## Configuration reference
 
-All configuration is via environment variables (see `.env.example`):
+Every variable is optional — these just set defaults or seed first-run values;
+the webhook and playlists are normally managed in the web UI (see
+`.env.example`):
 
 | Variable | Description |
 | --- | --- |
-| `DISCORD_WEBHOOK_URL` | **Required.** Your Discord channel webhook URL. |
 | `WEB_PORT` | Port for the management web UI (default `8080`). |
 | `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
-| `STATE_FILE` | Where the watch list + snapshots are saved (default `./data/state.json`). |
+| `STATE_FILE` | Where settings + watch list + snapshots are saved (default `./data/state.json`). |
+| `DISCORD_WEBHOOK_URL` | *Optional.* Seeds the webhook on the **first run** only; afterwards the web UI is the source of truth. |
 | `PLAYLISTS` | *Optional.* Seed playlist URLs (comma/newline separated) used only on the **first run** to pre-populate the watch list. After that, manage playlists in the web UI. |
 
 ## Running
