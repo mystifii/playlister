@@ -1,0 +1,10 @@
+services:
+  playlister:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override the state path to live on the mounted volume.
+      STATE_FILE: /app/data/state.json
+    volumes:
+      - ./data:/app/data

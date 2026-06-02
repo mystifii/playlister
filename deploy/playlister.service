@@ -1,0 +1,23 @@
+# Example systemd unit for running Playlister directly on a host (no Docker).
+#
+#   1. Build:   npm ci && npm run build
+#   2. Edit the paths/User below to match your install.
+#   3. sudo cp deploy/playlister.service /etc/systemd/system/
+#   4. sudo systemctl enable --now playlister
+#
+[Unit]
+Description=Playlister - Apple Music playlist -> Discord notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=playlister
+WorkingDirectory=/opt/playlister
+EnvironmentFile=/opt/playlister/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
