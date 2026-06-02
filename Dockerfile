@@ -19,4 +19,7 @@ COPY --from=build /app/dist ./dist
 VOLUME ["/app/data"]
 ENV STATE_FILE=/app/data/state.json
 
+# Web UI port.
+EXPOSE 8080
+
 CMD ["node", "dist/index.js"]

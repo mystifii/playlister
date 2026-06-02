@@ -6,5 +6,8 @@ services:
     environment:
       # Override the state path to live on the mounted volume.
       STATE_FILE: /app/data/state.json
+      WEB_PORT: 8080
+    ports:
+      - "8080:8080"
     volumes:
       - ./data:/app/data

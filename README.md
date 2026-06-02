@@ -4,7 +4,9 @@ A small self-hosted bot that watches **Apple Music playlists** and posts to a
 **Discord channel** whenever a new song is added.
 
 It polls each playlist on an interval, diffs the track list against the last
-snapshot, and sends a rich Discord embed for every newly added track.
+snapshot, and sends a rich Discord embed for every newly added track. A small
+**web UI** lets you add and remove watched playlists without touching config
+files.
 
 ## How it works (and what it can/can't do)
 
@@ -52,9 +54,10 @@ cp .env.example .env
 | Variable | Description |
 | --- | --- |
 | `DISCORD_WEBHOOK_URL` | Your Discord channel webhook URL. |
-| `PLAYLISTS` | One or more public playlist URLs, comma- or newline-separated. |
+| `PLAYLISTS` | *Optional.* Seed playlist URLs for the first run only — after that, manage them in the web UI. Leave empty to start with none. |
 | `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
-| `STATE_FILE` | Where snapshots are saved (default `./data/state.json`). |
+| `WEB_PORT` | Port for the management web UI (default `8080`). |
+| `STATE_FILE` | Where the watch list + snapshots are saved (default `./data/state.json`). |
 
 ## Running
 
@@ -71,6 +74,14 @@ For development without building:
 ```bash
 npm run dev
 ```
+
+Then open the **web UI** at <http://localhost:8080> to add/remove playlists.
+Pasting a share link validates it, loads its name and track count immediately,
+and starts watching it. The list also persists in `state.json`, so you can seed
+it via `PLAYLISTS` or manage it entirely from the UI.
+
+> The UI has no authentication — keep it on localhost or a trusted network, or
+> put it behind a reverse proxy with auth if you expose it.
 
 ### With Docker
 
@@ -90,12 +101,14 @@ unit file.
 
 ```
 src/
-  index.ts                 # entry point + polling loop
+  index.ts                 # entry point: web server + polling loop
   config.ts                # env config loading/validation
   watcher.ts               # fetch -> diff -> notify -> persist
   apple/public-client.ts   # reads public playlists via the web token
   discord/notify.ts        # Discord webhook embeds
-  store/state.ts           # JSON snapshot persistence
+  store/state.ts           # watch list + JSON snapshot persistence
+  web/server.ts            # Express management API
+  web/page.ts              # the (self-contained) web UI
 ```
 
 ## Notes & tuning

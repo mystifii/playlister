@@ -6,9 +6,10 @@ dotenv.config();
 export interface Config {
   discordWebhookUrl: string;
   pollIntervalSeconds: number;
-  /** Public Apple Music share URLs to watch. */
-  playlistUrls: string[];
+  /** Optional seed list, used only to populate state on first run. */
+  seedPlaylistUrls: string[];
   stateFile: string;
+  webPort: number;
 }
 
 function required(name: string): string {
@@ -22,22 +23,19 @@ function required(name: string): string {
 }
 
 function parsePlaylists(): string[] {
-  const raw = required("PLAYLISTS");
-  const urls = raw
+  const raw = process.env.PLAYLISTS ?? "";
+  return raw
     .split(/[,\n]/)
     .map((u) => u.trim())
     .filter((u) => u !== "");
-  if (urls.length === 0) {
-    throw new Error("PLAYLISTS must contain at least one Apple Music playlist URL.");
-  }
-  return urls;
 }
 
 export function loadConfig(): Config {
   return {
     discordWebhookUrl: required("DISCORD_WEBHOOK_URL"),
     pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS ?? "300"),
-    playlistUrls: parsePlaylists(),
+    seedPlaylistUrls: parsePlaylists(),
     stateFile: resolve(process.env.STATE_FILE ?? "./data/state.json"),
+    webPort: Number(process.env.WEB_PORT ?? "8080"),
   };
 }
