@@ -98,6 +98,50 @@ docker compose up -d --build
 State is persisted to `./data` via a mounted volume, so snapshots survive
 restarts.
 
+A prebuilt multi-arch image (amd64/arm64) is published to GHCR on every push
+to `main`:
+
+```bash
+docker run -d --name playlister \
+  -p 8080:8080 \
+  -v /path/to/appdata/playlister:/app/data \
+  ghcr.io/mystifii/playlister:latest
+```
+
+Then open <http://localhost:8080> and configure it there.
+
+### On Unraid
+
+Playlister runs as a normal Docker container using the prebuilt GHCR image.
+
+1. **Make sure the image is public.** After the first successful
+   [Publish Docker image](.github/workflows/docker-publish.yml) workflow run,
+   go to the package on GitHub
+   (`github.com/users/mystifii/packages/container/playlister/settings`) and set
+   its visibility to **Public** so Unraid can pull it without credentials.
+   (Alternatively, add GHCR registry credentials under
+   **Docker → enable advanced view → add a registry** in Unraid.)
+2. **Add the container.** Easiest is to import the template: in Unraid go to
+   **Docker → Add Container**, and in the *Template* field paste:
+
+   ```
+   https://raw.githubusercontent.com/mystifii/playlister/main/unraid/playlister.xml
+   ```
+
+   It pre-fills everything below. Or fill it in manually:
+   - **Repository:** `ghcr.io/mystifii/playlister:latest`
+   - **WebUI Port:** host `8080` → container `8080` (TCP)
+   - **App Data path:** `/mnt/user/appdata/playlister` → container `/app/data`
+   - Env vars (`DISCORD_WEBHOOK_URL`, `PLAYLISTS`, `POLL_INTERVAL_SECONDS`) are
+     all **optional** — leave them blank and configure everything in the web UI.
+3. **Apply**, wait for it to pull, then click the container's **WebUI** button
+   (or browse to `http://<tower-ip>:8080`). Set your Discord webhook and add
+   playlists there.
+
+Everything lives in `/mnt/user/appdata/playlister/state.json`, so your config
+survives container updates and restarts. To update, just re-pull the image from
+Unraid's Docker tab.
+
 ### With systemd
 
 See [`deploy/playlister.service`](deploy/playlister.service) for an example
