@@ -28,36 +28,54 @@ files.
 
 ## Setup
 
-### 1. Get a Discord webhook
+Playlister is managed entirely from its **web UI** — no config files required
+to get going.
 
-In your Discord server: **Server Settings → Integrations → Webhooks → New
-Webhook**, pick the channel, and **Copy Webhook URL**.
-
-### 2. Get your playlist share link(s)
-
-In the Music app, open the playlist → **⋯ → Share → Copy Link**. You'll get a
-URL like:
-
-```
-https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx
-```
-
-Make sure the playlist is shared/public.
-
-### 3. Configure
+### 1. Start it
 
 ```bash
-cp .env.example .env
-# then edit .env
+npm install && npm run build && npm start
 ```
+
+(or with Docker: `docker compose up -d --build`)
+
+### 2. Open the web UI
+
+Go to <http://localhost:8080>. From there:
+
+- **Set your Discord webhook.** In Discord: **Server Settings → Integrations →
+  Webhooks → New Webhook**, pick the channel, **Copy Webhook URL**, and paste
+  it into the *Discord notifications* box. (The stored token is masked in the UI
+  and never sent back to the browser.)
+- **Add playlists.** Grab a playlist's share link in the Music app (**⋯ →
+  Share → Copy Link**) — make sure it's shared/public — and paste it in. It
+  looks like `https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx`.
+  The UI validates the link, loads its name and track count immediately, and
+  starts watching it. Remove a playlist with one click.
+
+Both the webhook and the watch list are saved to `state.json`, and the running
+bot picks up changes on its next poll — no restart needed.
+
+> The UI has no authentication — keep it on localhost or a trusted network, or
+> put it behind a reverse proxy with auth if you expose it.
+
+That's it. New songs added to any watched playlist will show up in your Discord
+channel. (If no webhook is set yet, the bot still tracks playlists and logs a
+reminder; it just won't post until you add one.)
+
+## Configuration reference
+
+Every variable is optional — these just set defaults or seed first-run values;
+the webhook and playlists are normally managed in the web UI (see
+`.env.example`):
 
 | Variable | Description |
 | --- | --- |
-| `DISCORD_WEBHOOK_URL` | Your Discord channel webhook URL. |
-| `PLAYLISTS` | *Optional.* Seed playlist URLs for the first run only — after that, manage them in the web UI. Leave empty to start with none. |
-| `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
 | `WEB_PORT` | Port for the management web UI (default `8080`). |
-| `STATE_FILE` | Where the watch list + snapshots are saved (default `./data/state.json`). |
+| `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
+| `STATE_FILE` | Where settings + watch list + snapshots are saved (default `./data/state.json`). |
+| `DISCORD_WEBHOOK_URL` | *Optional.* Seeds the webhook on the **first run** only; afterwards the web UI is the source of truth. |
+| `PLAYLISTS` | *Optional.* Seed playlist URLs (comma/newline separated) used only on the **first run** to pre-populate the watch list. After that, manage playlists in the web UI. |
 
 ## Running
 
@@ -69,19 +87,7 @@ npm run build
 npm start
 ```
 
-For development without building:
-
-```bash
-npm run dev
-```
-
-Then open the **web UI** at <http://localhost:8080> to add/remove playlists.
-Pasting a share link validates it, loads its name and track count immediately,
-and starts watching it. The list also persists in `state.json`, so you can seed
-it via `PLAYLISTS` or manage it entirely from the UI.
-
-> The UI has no authentication — keep it on localhost or a trusted network, or
-> put it behind a reverse proxy with auth if you expose it.
+For development without building, use `npm run dev`.
 
 ### With Docker
 
@@ -115,8 +121,8 @@ src/
 
 - **Polling interval:** 5 minutes is a reasonable default. Lower it for faster
   notifications, but be polite to Apple's servers.
-- **Multiple playlists:** add them all to `PLAYLISTS`; each is tracked
-  independently.
+- **Multiple playlists:** add as many as you like in the web UI; each is
+  tracked independently.
 - **Resetting a playlist's baseline:** stop the bot, edit/remove that
   playlist's entry in `state.json`, and restart.
 - **Debug logging:** set `DEBUG=1` in the environment.

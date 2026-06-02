@@ -6,7 +6,6 @@ import {
 import { notifyTracksAdded } from "./discord/notify.js";
 import { Store, type PlaylistState } from "./store/state.js";
 import { logger } from "./logger.js";
-import type { Config } from "./config.js";
 
 /**
  * Polls watched playlists: fetches current tracks, diffs against the stored
@@ -17,7 +16,6 @@ import type { Config } from "./config.js";
  */
 export class Watcher {
   constructor(
-    private readonly config: Config,
     private readonly store: Store,
     private readonly client: AppleMusicPublicClient,
   ) {}
@@ -55,14 +53,22 @@ export class Watcher {
       logger.info(
         `"${snapshot.name}": ${newTracks.length} new track(s) detected.`,
       );
-      await notifyTracksAdded(
-        this.config.discordWebhookUrl,
-        newTracks.map((track) => ({
-          playlistName: snapshot.name,
-          playlistUrl: url,
-          track,
-        })),
-      );
+      const webhook = this.store.getWebhookUrl();
+      if (webhook) {
+        await notifyTracksAdded(
+          webhook,
+          newTracks.map((track) => ({
+            playlistName: snapshot.name,
+            playlistUrl: url,
+            track,
+          })),
+        );
+      } else {
+        logger.warn(
+          `No Discord webhook configured — skipping ${newTracks.length} ` +
+            `notification(s). Set one in the web UI.`,
+        );
+      }
     } else {
       logger.debug(`"${snapshot.name}": no changes.`);
     }

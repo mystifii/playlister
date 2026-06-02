@@ -4,22 +4,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export interface Config {
-  discordWebhookUrl: string;
+  /** Optional seed, used only to populate settings on first run. */
+  seedDiscordWebhookUrl?: string;
   pollIntervalSeconds: number;
   /** Optional seed list, used only to populate state on first run. */
   seedPlaylistUrls: string[];
   stateFile: string;
   webPort: number;
-}
-
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value || value.trim() === "") {
-    throw new Error(
-      `Missing required environment variable ${name}. Copy .env.example to .env and fill it in.`,
-    );
-  }
-  return value.trim();
 }
 
 function parsePlaylists(): string[] {
@@ -32,7 +23,7 @@ function parsePlaylists(): string[] {
 
 export function loadConfig(): Config {
   return {
-    discordWebhookUrl: required("DISCORD_WEBHOOK_URL"),
+    seedDiscordWebhookUrl: process.env.DISCORD_WEBHOOK_URL?.trim() || undefined,
     pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS ?? "300"),
     seedPlaylistUrls: parsePlaylists(),
     stateFile: resolve(process.env.STATE_FILE ?? "./data/state.json"),
