@@ -48,24 +48,27 @@ export function startWebServer(
     res.json({ webhookSet: true, webhookPreview: maskWebhook(url) });
   });
 
-  // List watched playlists, joining the configured URLs with their snapshots.
+  // List watched playlists, joining the configured entries with their
+  // snapshots. Each reports whether it has its own webhook override (masked).
   app.get("/api/playlists", (_req, res) => {
     const snapshots = new Map(store.listSnapshots().map((s) => [s.url, s]));
-    const playlists = store.getWatched().map((url) => {
-      const snap = snapshots.get(url);
+    const playlists = store.getWatched().map((w) => {
+      const snap = snapshots.get(w.url);
       return {
-        url,
+        url: w.url,
         id: snap?.id ?? null,
         name: snap?.name ?? null,
         trackCount: snap?.trackCount ?? null,
         lastChecked: snap?.lastChecked ?? null,
+        customWebhook: Boolean(w.webhookUrl),
+        webhookPreview: maskWebhook(w.webhookUrl),
       };
     });
-    res.json({ playlists });
+    res.json({ playlists, defaultWebhookSet: Boolean(store.getWebhookUrl()) });
   });
 
-  // Add a playlist: validate the URL, baseline it immediately for instant
-  // feedback (name + track count), then persist it to the watch list.
+  // Add a playlist: validate the URL (and optional per-playlist webhook),
+  // baseline it immediately for instant feedback, then persist it.
   app.post("/api/playlists", async (req, res) => {
     const url = String(req.body?.url ?? "").trim();
     if (!url) {
@@ -76,21 +79,52 @@ export function startWebServer(
     } catch (err) {
       return res.status(400).json({ error: (err as Error).message });
     }
-    if (store.getWatched().includes(url)) {
+    if (store.isWatched(url)) {
       return res.status(409).json({ error: "That playlist is already watched." });
+    }
+    const webhookUrl = String(req.body?.webhookUrl ?? "").trim();
+    if (webhookUrl && !isValidWebhook(webhookUrl)) {
+      return res
+        .status(400)
+        .json({ error: "That doesn't look like a Discord webhook URL." });
     }
 
     try {
       const info = await watcher.baseline(url);
-      store.addWatched(url);
+      store.addWatched(url, webhookUrl || undefined);
       logger.info(`Added playlist via UI: "${info.name}" (${url})`);
-      return res.status(201).json({ playlist: { url, ...info } });
+      return res
+        .status(201)
+        .json({ playlist: { url, ...info, customWebhook: Boolean(webhookUrl) } });
     } catch (err) {
       // Don't add an unreachable playlist to the watch list.
       return res.status(502).json({
         error: `Could not load that playlist: ${(err as Error).message}`,
       });
     }
+  });
+
+  // Set or clear a playlist's per-playlist webhook override (by id).
+  // An empty/null value clears it, falling back to the default webhook.
+  app.put("/api/playlists/:id/webhook", (req, res) => {
+    const snap = store.getSnapshot(req.params.id);
+    if (!snap) return res.status(404).json({ error: "Not found." });
+
+    const raw = req.body?.webhookUrl;
+    if (raw === "" || raw === null || raw === undefined) {
+      store.setPlaylistWebhook(snap.url, undefined);
+      logger.info(`Cleared webhook override for "${snap.name}".`);
+      return res.json({ customWebhook: false, webhookPreview: null });
+    }
+    const webhookUrl = String(raw).trim();
+    if (!isValidWebhook(webhookUrl)) {
+      return res
+        .status(400)
+        .json({ error: "That doesn't look like a Discord webhook URL." });
+    }
+    store.setPlaylistWebhook(snap.url, webhookUrl);
+    logger.info(`Set webhook override for "${snap.name}".`);
+    res.json({ customWebhook: true, webhookPreview: maskWebhook(webhookUrl) });
   });
 
   // Remove a playlist by id.

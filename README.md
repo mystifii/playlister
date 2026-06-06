@@ -43,10 +43,14 @@ npm install && npm run build && npm start
 
 Go to <http://localhost:8080>. From there:
 
-- **Set your Discord webhook.** In Discord: **Server Settings → Integrations →
-  Webhooks → New Webhook**, pick the channel, **Copy Webhook URL**, and paste
-  it into the *Discord notifications* box. (The stored token is masked in the UI
-  and never sent back to the browser.)
+- **Set your default Discord webhook.** In Discord: **Server Settings →
+  Integrations → Webhooks → New Webhook**, pick the channel, **Copy Webhook
+  URL**, and paste it into the *Default Discord webhook* box. (The stored token
+  is masked in the UI and never sent back to the browser.)
+- **Optionally give a playlist its own webhook.** Each playlist can override the
+  default to post to a different channel — set it when adding a playlist, or via
+  **edit** on the playlist afterwards. Playlists without an override use the
+  default.
 - **Add playlists.** Grab a playlist's share link in the Music app (**⋯ →
   Share → Copy Link**) — make sure it's shared/public — and paste it in. It
   looks like `https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx`.

@@ -60,6 +60,16 @@ export const PAGE = /* html */ `<!doctype html>
   .status.on { color: #4ad17a; }
   .status.off { color: #ffb454; }
   code { background: #000; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  #add { flex-direction: column; }
+  .hint { color: var(--muted); font-size: 12px; margin: -4px 0 0; }
+  .hook-line { color: var(--muted); font-size: 12px; margin-top: 4px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tag.custom { color: #7aa2ff; }
+  .link { background: none; border: none; color: var(--accent); cursor: pointer;
+    padding: 0; font-size: 12px; font-weight: 600; }
+  .hook-edit { display: flex; gap: 6px; margin-top: 8px; }
+  .hook-edit input { font-size: 13px; padding: 7px 10px; }
+  .hook-edit button { padding: 7px 11px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -68,18 +78,22 @@ export const PAGE = /* html */ `<!doctype html>
   <p class="sub">Watching Apple Music playlists &middot; new songs are posted to Discord.</p>
 
   <div class="panel">
-    <h2>Discord notifications</h2>
+    <h2>Default Discord webhook</h2>
     <form id="hook" class="row">
       <input id="hookUrl" type="text" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" />
       <button id="hookBtn" type="submit">Save</button>
       <button id="hookClear" type="button" class="ghost">Clear</button>
     </form>
     <div id="hookStatus" class="status"></div>
+    <p class="hint">Used for any playlist that doesn't have its own webhook below.</p>
   </div>
 
   <form id="add">
-    <input id="url" type="text" placeholder="Paste an Apple Music playlist share link…" autocomplete="off" />
-    <button id="addBtn" type="submit">Add</button>
+    <div class="row">
+      <input id="url" type="text" placeholder="Paste an Apple Music playlist share link…" autocomplete="off" />
+      <button id="addBtn" type="submit">Add</button>
+    </div>
+    <input id="addHook" type="text" placeholder="Optional: webhook for this playlist (blank = use default)" autocomplete="off" />
   </form>
   <div id="msg" class="msg"></div>
 
@@ -105,7 +119,7 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s; re
 
 async function load() {
   const res = await fetch("/api/playlists");
-  const { playlists } = await res.json();
+  const { playlists, defaultWebhookSet } = await res.json();
   const list = $("list");
   if (!playlists.length) {
     list.innerHTML = '<div class="empty">No playlists yet. Add one above.</div>';
@@ -117,14 +131,33 @@ async function load() {
       ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + title + "</a>"
       : title;
     const count = p.trackCount != null ? p.trackCount + " tracks · " : "";
-    const key = p.id || p.url;
+    const id = p.id || "";
+
+    let hookText, hookCls;
+    if (p.customWebhook) { hookText = "own webhook · " + esc(p.webhookPreview); hookCls = "tag custom"; }
+    else if (defaultWebhookSet) { hookText = "uses default webhook"; hookCls = "tag"; }
+    else { hookText = "no webhook — notifications off"; hookCls = "tag"; }
+
+    const editControls = id
+      ? '<button class="link" data-edit="' + esc(id) + '">edit</button>'
+      : "";
+    const editor = id
+      ? '<div class="hook-edit" id="he-' + esc(id) + '" hidden>' +
+          '<input type="text" placeholder="Discord webhook URL (blank = use default)" />' +
+          '<button data-save="' + esc(id) + '">Save</button>' +
+          (p.customWebhook ? '<button class="ghost" data-default="' + esc(id) + '">Use default</button>' : "") +
+        "</div>"
+      : "";
+
     return (
       "<li>" +
         '<div class="meta">' +
           '<div class="name">' + nameHtml + "</div>" +
           '<div class="detail">' + count + fmtTime(p.lastChecked) + "</div>" +
+          '<div class="hook-line"><span class="' + hookCls + '">' + hookText + "</span>" + editControls + "</div>" +
+          editor +
         "</div>" +
-        '<button class="ghost" data-id="' + esc(p.id || "") + '" data-url="' +
+        '<button class="ghost" data-id="' + esc(id) + '" data-url="' +
           esc(p.url) + '">Remove</button>' +
       "</li>"
     );
@@ -133,6 +166,35 @@ async function load() {
   list.querySelectorAll("button[data-url]").forEach((btn) => {
     btn.onclick = () => remove(btn.dataset.id, btn.dataset.url);
   });
+  list.querySelectorAll("button[data-edit]").forEach((btn) => {
+    btn.onclick = () => {
+      const box = $("he-" + btn.dataset.edit);
+      if (box) box.hidden = !box.hidden;
+    };
+  });
+  list.querySelectorAll("button[data-save]").forEach((btn) => {
+    btn.onclick = () => {
+      const input = $("he-" + btn.dataset.save).querySelector("input");
+      saveHook(btn.dataset.save, input.value.trim());
+    };
+  });
+  list.querySelectorAll("button[data-default]").forEach((btn) => {
+    btn.onclick = () => saveHook(btn.dataset.default, "");
+  });
+}
+
+async function saveHook(id, webhookUrl) {
+  try {
+    const res = await fetch("/api/playlists/" + encodeURIComponent(id) + "/webhook", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ webhookUrl }),
+    });
+    const data = await res.json();
+    if (res.ok) { setMsg(webhookUrl ? "Playlist webhook saved." : "Reverted to default webhook.", "ok"); load(); }
+    else setMsg(data.error || "Failed to save webhook.", "err");
+  } catch (err) {
+    setMsg("Network error.", "err");
+  }
 }
 
 async function remove(id, url) {
@@ -195,17 +257,19 @@ $("add").onsubmit = async (e) => {
   e.preventDefault();
   const url = $("url").value.trim();
   if (!url) return;
+  const webhookUrl = $("addHook").value.trim();
   $("addBtn").disabled = true;
   setMsg("Adding…");
   try {
     const res = await fetch("/api/playlists", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, webhookUrl }),
     });
     const data = await res.json();
     if (res.ok) {
       setMsg("Added " + (data.playlist?.name || "playlist") + ".", "ok");
       $("url").value = "";
+      $("addHook").value = "";
       load();
     } else {
       setMsg(data.error || "Failed to add playlist.", "err");

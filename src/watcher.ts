@@ -21,7 +21,7 @@ export class Watcher {
   ) {}
 
   async pollAll(): Promise<void> {
-    for (const url of this.store.getWatched()) {
+    for (const { url } of this.store.getWatched()) {
       try {
         await this.pollOne(url);
       } catch (err) {
@@ -53,7 +53,7 @@ export class Watcher {
       logger.info(
         `"${snapshot.name}": ${newTracks.length} new track(s) detected.`,
       );
-      const webhook = this.store.getWebhookUrl();
+      const webhook = this.store.effectiveWebhook(url);
       if (webhook) {
         await notifyTracksAdded(
           webhook,
