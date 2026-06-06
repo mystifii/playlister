@@ -11,6 +11,9 @@ export interface PlaylistState {
   /** False until the first successful poll, so we don't notify for a backlog. */
   initialized: boolean;
   lastChecked?: string;
+  /** Set when the most recent poll failed; cleared on the next success. */
+  lastError?: string;
+  lastErrorAt?: string;
 }
 
 /**
@@ -245,5 +248,19 @@ export class Store {
   setSnapshot(id: string, snapshot: PlaylistState): void {
     this.state.snapshots[id] = snapshot;
     this.write();
+  }
+
+  /**
+   * Record that a poll failed, against the snapshot matching the URL. This keeps
+   * the stale `lastChecked` intact (so it's visibly lagging) and surfaces *why*.
+   * Returns false if no snapshot exists yet for that URL.
+   */
+  recordPollError(url: string, message: string): boolean {
+    const entry = Object.values(this.state.snapshots).find((s) => s.url === url);
+    if (!entry) return false;
+    entry.lastError = message;
+    entry.lastErrorAt = new Date().toISOString();
+    this.write();
+    return true;
   }
 }

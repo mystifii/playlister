@@ -25,8 +25,11 @@ export class Watcher {
       try {
         await this.pollOne(url);
       } catch (err) {
-        // One bad playlist shouldn't stop the others or kill the loop.
-        logger.error(`Failed to poll ${url}: ${(err as Error).message}`);
+        // One bad playlist shouldn't stop the others or kill the loop. Record
+        // the failure so it surfaces in the UI instead of just a stale time.
+        const message = (err as Error).message;
+        logger.error(`Failed to poll ${url}: ${message}`);
+        this.store.recordPollError(url, message);
       }
     }
   }
@@ -49,38 +52,68 @@ export class Watcher {
     const known = new Set(prev.trackIds);
     const newTracks: Track[] = snapshot.tracks.filter((t) => !known.has(t.id));
 
-    if (newTracks.length > 0) {
-      logger.info(
-        `"${snapshot.name}": ${newTracks.length} new track(s) detected.`,
-      );
-      const destination = this.store.effectiveDestination(url);
-      const botToken = this.store.getBotToken();
-      if (!destination) {
-        logger.warn(
-          `No Discord destination configured — skipping ${newTracks.length} ` +
-            `notification(s). Set one in the web UI.`,
-        );
-      } else if (destination.type === "channel" && !botToken) {
-        logger.warn(
-          `"${snapshot.name}" posts to a channel/thread but no bot token is set ` +
-            `— skipping ${newTracks.length} notification(s).`,
-        );
-      } else {
-        await notifyTracksAdded(
-          destination,
-          botToken,
-          newTracks.map((track) => ({
-            playlistName: snapshot.name,
-            playlistUrl: url,
-            track,
-          })),
-        );
-      }
-    } else {
+    if (newTracks.length === 0) {
+      // No additions: advance the snapshot (refreshes lastChecked, clears any
+      // prior error) and move on.
+      this.saveSnapshot(ref.id, url, snapshot.name, currentIds);
       logger.debug(`"${snapshot.name}": no changes.`);
+      return;
     }
 
-    this.saveSnapshot(ref.id, url, snapshot.name, currentIds);
+    logger.info(`"${snapshot.name}": ${newTracks.length} new track(s) detected.`);
+
+    // Delivery is decoupled from polling: only advance the snapshot once the
+    // notifications are delivered, so a Discord failure (e.g. missing
+    // permissions) doesn't freeze the checked-time or drop the additions — they
+    // are retried next poll and arrive once the problem is fixed.
+    try {
+      await this.deliver(url, snapshot.name, newTracks);
+      this.saveSnapshot(ref.id, url, snapshot.name, currentIds);
+    } catch (err) {
+      const message = `Discord delivery failed: ${(err as Error).message}`;
+      logger.error(`"${snapshot.name}": ${message}`);
+      this.markDeliveryFailed(ref.id, snapshot.name, message);
+    }
+  }
+
+  /** Resolve the destination and send notifications; throws if it can't. */
+  private async deliver(
+    url: string,
+    playlistName: string,
+    newTracks: Track[],
+  ): Promise<void> {
+    const destination = this.store.effectiveDestination(url);
+    if (!destination) {
+      throw new Error("No Discord destination configured — set one in the web UI.");
+    }
+    const botToken = this.store.getBotToken();
+    if (destination.type === "channel" && !botToken) {
+      throw new Error(
+        "Posts to a channel/thread but no bot token is set — add one in the web UI.",
+      );
+    }
+    await notifyTracksAdded(
+      destination,
+      botToken,
+      newTracks.map((track) => ({ playlistName, playlistUrl: url, track })),
+    );
+  }
+
+  /**
+   * Record a delivery failure: refresh lastChecked (the poll itself worked) and
+   * note the error, but keep the previous trackIds so the undelivered additions
+   * are retried on the next poll.
+   */
+  private markDeliveryFailed(id: string, name: string, message: string): void {
+    const prev = this.store.getSnapshot(id);
+    if (!prev) return;
+    this.store.setSnapshot(id, {
+      ...prev,
+      name,
+      lastChecked: new Date().toISOString(),
+      lastError: message,
+      lastErrorAt: new Date().toISOString(),
+    });
   }
 
   /**
