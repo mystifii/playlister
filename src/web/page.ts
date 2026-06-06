@@ -66,6 +66,7 @@ export const PAGE = /* html */ `<!doctype html>
   .hook-line { color: var(--muted); font-size: 12px; margin-top: 4px;
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .tag.custom { color: #7aa2ff; }
+  .err-line { color: #ff6b6b; font-size: 12px; margin-top: 4px; }
   .link { background: none; border: none; color: var(--accent); cursor: pointer;
     padding: 0; font-size: 12px; font-weight: 600; }
   .hook-edit { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
@@ -161,6 +162,9 @@ async function load() {
       : title;
     const count = p.trackCount != null ? p.trackCount + " tracks · " : "";
     const id = p.id || "";
+    const errLine = p.lastError
+      ? '<div class="err-line">⚠ ' + esc(p.lastError) + "</div>"
+      : "";
 
     let summary, cls;
     if (p.usesDefault) {

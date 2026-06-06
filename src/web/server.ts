@@ -77,6 +77,8 @@ export function startWebServer(
         name: snap?.name ?? null,
         trackCount: snap?.trackCount ?? null,
         lastChecked: snap?.lastChecked ?? null,
+        lastError: snap?.lastError ?? null,
+        lastErrorAt: snap?.lastErrorAt ?? null,
         usesDefault: !w.destination,
         destination: destinationView(w.destination),
       };
