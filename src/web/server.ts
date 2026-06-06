@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import { Store, type Destination } from "../store/state.js";
 import { Watcher } from "../watcher.js";
 import { parsePlaylistUrl } from "../apple/public-client.js";
+import { diagnoseChannelPermissions } from "../discord/permissions.js";
 import { logger } from "../logger.js";
 import { PAGE } from "./page.js";
 
@@ -63,6 +64,34 @@ export function startWebServer(
     store.setDefaultDestination(built.destination);
     logger.info(`Default Discord destination set (${built.destination.type}).`);
     res.json({ defaultDestination: destinationView(built.destination) });
+  });
+
+  // Check a destination without waiting for a new song: validates a webhook,
+  // or computes the bot's permissions in a channel/thread and reports any gaps.
+  app.post("/api/test-destination", async (req, res) => {
+    const built = buildDestinationFromBody(req.body);
+    if ("cleared" in built) return res.status(400).json({ error: "Nothing to test." });
+    if ("error" in built) return res.status(400).json({ error: built.error });
+    const dest = built.destination;
+
+    if (dest.type === "webhook") {
+      try {
+        const r = await fetch(dest.webhookUrl as string);
+        return res.json(
+          r.ok
+            ? { ok: true, summary: "Webhook is valid." }
+            : { ok: false, summary: `Webhook check failed (HTTP ${r.status}).` },
+        );
+      } catch {
+        return res.json({ ok: false, summary: "Couldn't reach Discord." });
+      }
+    }
+
+    const diag = await diagnoseChannelPermissions(
+      store.getBotToken(),
+      dest.channelId as string,
+    );
+    res.json(diag);
   });
 
   // ---- playlists ----

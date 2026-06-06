@@ -90,6 +90,14 @@ different playlists can post to different channels/threads.
    it as the channel/thread value — either the default destination or a
    per-playlist override. The bot posts your "new song" embeds into that thread.
 
+The bot needs these permissions **in the target channel/thread**: **View
+Channel**, **Send Messages** (or **Send Messages in Threads** for a thread), and
+**Embed Links**. Use the **Test** button next to a destination to check — it
+computes the bot's effective permissions and tells you exactly which one is
+missing (Discord's own "Missing Permissions" error doesn't say). If a real
+delivery fails, the missing permission is appended to the ⚠ error shown on the
+playlist too.
+
 > The bot only needs to *send* messages, so Playlister talks to Discord's REST
 > API and does **not** keep a gateway connection open — the bot will appear
 > offline in the member list but can still post. Bot tokens are masked in the

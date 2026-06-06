@@ -99,6 +99,7 @@ export const PAGE = /* html */ `<!doctype html>
       </select>
       <input id="destVal" type="text" autocomplete="off" />
       <button id="destBtn" type="submit">Save</button>
+      <button id="destTest" type="button" class="ghost">Test</button>
       <button id="destClear" type="button" class="ghost">Clear</button>
     </form>
     <div id="destStatus" class="status"></div>
@@ -184,6 +185,7 @@ async function load() {
           "</select>" +
           '<input type="text" class="pl-val" />' +
           '<button data-save="' + esc(id) + '">Save</button>' +
+          '<button class="ghost" data-test="' + esc(id) + '">Test</button>' +
         "</div>"
       : "";
     const editLink = id ? '<button class="link" data-edit="' + esc(id) + '">edit</button>' : "";
@@ -221,6 +223,26 @@ async function load() {
       savePlDest(btn.dataset.save, type, value);
     };
   });
+  list.querySelectorAll("button[data-test]").forEach((btn) => {
+    btn.onclick = () => {
+      const box = $("he-" + btn.dataset.test);
+      testDestination(box.querySelector(".pl-type").value, box.querySelector(".pl-val").value.trim());
+    };
+  });
+}
+
+async function testDestination(type, value) {
+  if (type === "none") { setMsg("Pick Webhook or Bot channel/thread to test.", "err"); return; }
+  if (!value) { setMsg("Enter a value to test.", "err"); return; }
+  setMsg("Testing…");
+  try {
+    const res = await fetch("/api/test-destination", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, value }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(data.error || "Test failed.", "err"); return; }
+    setMsg(data.summary, data.ok ? "ok" : "err");
+  } catch (e) { setMsg("Network error.", "err"); }
 }
 
 async function remove(id, url) {
@@ -264,6 +286,8 @@ async function loadSettings() {
 }
 
 $("destType").onchange = () => { $("destVal").placeholder = placeholderFor($("destType").value); };
+
+$("destTest").onclick = () => testDestination($("destType").value, $("destVal").value.trim());
 
 $("bot").onsubmit = async (e) => {
   e.preventDefault();

@@ -4,6 +4,7 @@ import {
   type Track,
 } from "./apple/public-client.js";
 import { notifyTracksAdded } from "./discord/notify.js";
+import { diagnoseChannelPermissions } from "./discord/permissions.js";
 import { Store, type PlaylistState } from "./store/state.js";
 import { logger } from "./logger.js";
 
@@ -70,7 +71,17 @@ export class Watcher {
       await this.deliver(url, snapshot.name, newTracks);
       this.saveSnapshot(ref.id, url, snapshot.name, currentIds);
     } catch (err) {
-      const message = `Discord delivery failed: ${(err as Error).message}`;
+      let message = `Discord delivery failed: ${(err as Error).message}`;
+      // If it's a channel/thread destination, work out which permission is
+      // missing — Discord's error doesn't say.
+      const dest = this.store.effectiveDestination(url);
+      if (dest?.type === "channel" && dest.channelId) {
+        const diag = await diagnoseChannelPermissions(
+          this.store.getBotToken(),
+          dest.channelId,
+        ).catch(() => null);
+        if (diag && !diag.ok) message += ` — ${diag.summary}`;
+      }
       logger.error(`"${snapshot.name}": ${message}`);
       this.markDeliveryFailed(ref.id, snapshot.name, message);
     }
