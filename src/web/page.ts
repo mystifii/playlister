@@ -21,11 +21,12 @@ export const PAGE = /* html */ `<!doctype html>
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
   .sub { color: var(--muted); margin: 0 0 28px; font-size: 13px; }
   form { display: flex; gap: 8px; margin-bottom: 12px; }
-  input[type=text] {
+  input[type=text], input[type=password], select {
     flex: 1; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--card); color: var(--text); font-size: 14px;
+    background: var(--card); color: var(--text); font-size: 14px; min-width: 0;
   }
-  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  select { flex: 0 0 auto; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
   button {
     border: none; border-radius: 10px; padding: 11px 16px; font-size: 14px;
     font-weight: 600; cursor: pointer; background: var(--accent); color: #fff;
@@ -51,7 +52,7 @@ export const PAGE = /* html */ `<!doctype html>
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
   .panel {
     background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px; margin-bottom: 24px;
+    padding: 16px; margin-bottom: 18px;
   }
   .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
     color: var(--muted); margin: 0 0 10px; }
@@ -61,14 +62,15 @@ export const PAGE = /* html */ `<!doctype html>
   .status.off { color: #ffb454; }
   code { background: #000; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
   #add { flex-direction: column; }
-  .hint { color: var(--muted); font-size: 12px; margin: -4px 0 0; }
+  .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
   .hook-line { color: var(--muted); font-size: 12px; margin-top: 4px;
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .tag.custom { color: #7aa2ff; }
   .link { background: none; border: none; color: var(--accent); cursor: pointer;
     padding: 0; font-size: 12px; font-weight: 600; }
-  .hook-edit { display: flex; gap: 6px; margin-top: 8px; }
+  .hook-edit { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .hook-edit input { font-size: 13px; padding: 7px 10px; }
+  .hook-edit select { font-size: 13px; padding: 7px 10px; }
   .hook-edit button { padding: 7px 11px; font-size: 13px; }
 </style>
 </head>
@@ -78,14 +80,28 @@ export const PAGE = /* html */ `<!doctype html>
   <p class="sub">Watching Apple Music playlists &middot; new songs are posted to Discord.</p>
 
   <div class="panel">
-    <h2>Default Discord webhook</h2>
-    <form id="hook" class="row">
-      <input id="hookUrl" type="text" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" />
-      <button id="hookBtn" type="submit">Save</button>
-      <button id="hookClear" type="button" class="ghost">Clear</button>
+    <h2>Discord bot token</h2>
+    <form id="bot" class="row">
+      <input id="botToken" type="password" placeholder="Bot token (needed for channel / thread posting)" autocomplete="off" />
+      <button id="botBtn" type="submit">Save</button>
+      <button id="botClear" type="button" class="ghost">Clear</button>
     </form>
-    <div id="hookStatus" class="status"></div>
-    <p class="hint">Used for any playlist that doesn't have its own webhook below.</p>
+    <div id="botStatus" class="status"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Default destination</h2>
+    <form id="dest" class="row">
+      <select id="destType">
+        <option value="webhook">Webhook URL</option>
+        <option value="channel">Bot channel / thread</option>
+      </select>
+      <input id="destVal" type="text" autocomplete="off" />
+      <button id="destBtn" type="submit">Save</button>
+      <button id="destClear" type="button" class="ghost">Clear</button>
+    </form>
+    <div id="destStatus" class="status"></div>
+    <p class="hint">Used for any playlist without its own destination. Channel/thread posting requires the bot token above, and the bot must be in the server with access to that channel/thread.</p>
   </div>
 
   <form id="add">
@@ -93,7 +109,6 @@ export const PAGE = /* html */ `<!doctype html>
       <input id="url" type="text" placeholder="Paste an Apple Music playlist share link…" autocomplete="off" />
       <button id="addBtn" type="submit">Add</button>
     </div>
-    <input id="addHook" type="text" placeholder="Optional: webhook for this playlist (blank = use default)" autocomplete="off" />
   </form>
   <div id="msg" class="msg"></div>
 
@@ -117,9 +132,23 @@ function fmtTime(iso) {
 
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
+function destLabel(d) {
+  if (!d) return "none";
+  if (d.type === "webhook") return "webhook · " + d.webhookPreview;
+  return "channel/thread " + d.channelId;
+}
+
+function placeholderFor(type) {
+  return type === "channel"
+    ? "Channel / thread ID or link"
+    : "https://discord.com/api/webhooks/…";
+}
+
+// ---- playlists ----
+
 async function load() {
   const res = await fetch("/api/playlists");
-  const { playlists, defaultWebhookSet } = await res.json();
+  const { playlists, defaultDestination, botTokenSet } = await res.json();
   const list = $("list");
   if (!playlists.length) {
     list.innerHTML = '<div class="empty">No playlists yet. Add one above.</div>';
@@ -133,32 +162,37 @@ async function load() {
     const count = p.trackCount != null ? p.trackCount + " tracks · " : "";
     const id = p.id || "";
 
-    let hookText, hookCls;
-    if (p.customWebhook) { hookText = "own webhook · " + esc(p.webhookPreview); hookCls = "tag custom"; }
-    else if (defaultWebhookSet) { hookText = "uses default webhook"; hookCls = "tag"; }
-    else { hookText = "no webhook — notifications off"; hookCls = "tag"; }
+    let summary, cls;
+    if (p.usesDefault) {
+      summary = "uses default (" + esc(defaultDestination ? destLabel(defaultDestination) : "none set") + ")";
+      cls = "tag";
+    } else {
+      summary = "own " + esc(destLabel(p.destination));
+      cls = "tag custom";
+    }
 
-    const editControls = id
-      ? '<button class="link" data-edit="' + esc(id) + '">edit</button>'
-      : "";
+    const curType = p.usesDefault ? "none" : p.destination.type;
+    const opt = (v, label) => '<option value="' + v + '"' + (v === curType ? " selected" : "") + ">" + label + "</option>";
     const editor = id
       ? '<div class="hook-edit" id="he-' + esc(id) + '" hidden>' +
-          '<input type="text" placeholder="Discord webhook URL (blank = use default)" />' +
+          '<select class="pl-type">' +
+            opt("none", "Use default") + opt("webhook", "Webhook URL") + opt("channel", "Bot channel / thread") +
+          "</select>" +
+          '<input type="text" class="pl-val" />' +
           '<button data-save="' + esc(id) + '">Save</button>' +
-          (p.customWebhook ? '<button class="ghost" data-default="' + esc(id) + '">Use default</button>' : "") +
         "</div>"
       : "";
+    const editLink = id ? '<button class="link" data-edit="' + esc(id) + '">edit</button>' : "";
 
     return (
       "<li>" +
         '<div class="meta">' +
           '<div class="name">' + nameHtml + "</div>" +
           '<div class="detail">' + count + fmtTime(p.lastChecked) + "</div>" +
-          '<div class="hook-line"><span class="' + hookCls + '">' + hookText + "</span>" + editControls + "</div>" +
+          '<div class="hook-line"><span class="' + cls + '">' + summary + "</span>" + editLink + "</div>" +
           editor +
         "</div>" +
-        '<button class="ghost" data-id="' + esc(id) + '" data-url="' +
-          esc(p.url) + '">Remove</button>' +
+        '<button class="ghost" data-id="' + esc(id) + '" data-url="' + esc(p.url) + '">Remove</button>' +
       "</li>"
     );
   }).join("");
@@ -167,118 +201,127 @@ async function load() {
     btn.onclick = () => remove(btn.dataset.id, btn.dataset.url);
   });
   list.querySelectorAll("button[data-edit]").forEach((btn) => {
-    btn.onclick = () => {
-      const box = $("he-" + btn.dataset.edit);
-      if (box) box.hidden = !box.hidden;
-    };
+    btn.onclick = () => { const b = $("he-" + btn.dataset.edit); if (b) b.hidden = !b.hidden; };
+  });
+  list.querySelectorAll(".hook-edit").forEach((box) => {
+    const sel = box.querySelector(".pl-type");
+    const val = box.querySelector(".pl-val");
+    const sync = () => { val.style.display = sel.value === "none" ? "none" : ""; val.placeholder = placeholderFor(sel.value); };
+    sel.onchange = sync; sync();
   });
   list.querySelectorAll("button[data-save]").forEach((btn) => {
     btn.onclick = () => {
-      const input = $("he-" + btn.dataset.save).querySelector("input");
-      saveHook(btn.dataset.save, input.value.trim());
+      const box = $("he-" + btn.dataset.save);
+      const type = box.querySelector(".pl-type").value;
+      const value = box.querySelector(".pl-val").value.trim();
+      savePlDest(btn.dataset.save, type, value);
     };
   });
-  list.querySelectorAll("button[data-default]").forEach((btn) => {
-    btn.onclick = () => saveHook(btn.dataset.default, "");
-  });
-}
-
-async function saveHook(id, webhookUrl) {
-  try {
-    const res = await fetch("/api/playlists/" + encodeURIComponent(id) + "/webhook", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ webhookUrl }),
-    });
-    const data = await res.json();
-    if (res.ok) { setMsg(webhookUrl ? "Playlist webhook saved." : "Reverted to default webhook.", "ok"); load(); }
-    else setMsg(data.error || "Failed to save webhook.", "err");
-  } catch (err) {
-    setMsg("Network error.", "err");
-  }
 }
 
 async function remove(id, url) {
   let res;
   if (id) res = await fetch("/api/playlists/" + encodeURIComponent(id), { method: "DELETE" });
   else res = await fetch("/api/playlists", {
-    method: "DELETE", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+    method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
   });
   if (res.ok) { setMsg("Removed.", "ok"); load(); }
   else setMsg("Could not remove playlist.", "err");
 }
 
-async function loadSettings() {
-  const res = await fetch("/api/settings");
-  const s = await res.json();
-  const status = $("hookStatus");
-  if (s.webhookSet) {
-    status.className = "status on";
-    status.innerHTML = "Notifications on · <code>" + esc(s.webhookPreview) + "</code>";
-    $("hookUrl").placeholder = "Paste a new URL to replace it…";
-  } else {
-    status.className = "status off";
-    status.textContent = "No webhook set — notifications are off.";
-    $("hookUrl").placeholder = "https://discord.com/api/webhooks/…";
-  }
-}
-
-$("hook").onsubmit = async (e) => {
-  e.preventDefault();
-  const url = $("hookUrl").value.trim();
-  if (!url) return;
-  $("hookBtn").disabled = true;
+async function savePlDest(id, type, value) {
   try {
-    const res = await fetch("/api/settings", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ discordWebhookUrl: url }),
+    const res = await fetch("/api/playlists/" + encodeURIComponent(id) + "/destination", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, value }),
     });
     const data = await res.json();
-    if (res.ok) { setMsg("Webhook saved.", "ok"); $("hookUrl").value = ""; loadSettings(); }
-    else setMsg(data.error || "Failed to save webhook.", "err");
-  } catch (err) {
-    setMsg("Network error.", "err");
-  } finally {
-    $("hookBtn").disabled = false;
+    if (res.ok) { setMsg(type === "none" ? "Reverted to default." : "Playlist destination saved.", "ok"); load(); }
+    else setMsg(data.error || "Failed to save destination.", "err");
+  } catch (e) { setMsg("Network error.", "err"); }
+}
+
+// ---- settings: bot token + default destination ----
+
+async function loadSettings() {
+  const s = await (await fetch("/api/settings")).json();
+
+  const bs = $("botStatus");
+  if (s.botTokenSet) { bs.className = "status on"; bs.innerHTML = "Bot token set · <code>" + esc(s.botTokenPreview) + "</code>"; }
+  else { bs.className = "status off"; bs.textContent = "No bot token — channel/thread posting is disabled."; }
+
+  const ds = $("destStatus");
+  if (s.defaultDestination) {
+    ds.className = "status on"; ds.innerHTML = "Default: <code>" + esc(destLabel(s.defaultDestination)) + "</code>";
+    $("destType").value = s.defaultDestination.type;
+  } else {
+    ds.className = "status off"; ds.textContent = "No default destination set.";
   }
+  $("destVal").placeholder = placeholderFor($("destType").value);
+}
+
+$("destType").onchange = () => { $("destVal").placeholder = placeholderFor($("destType").value); };
+
+$("bot").onsubmit = async (e) => {
+  e.preventDefault();
+  const botToken = $("botToken").value.trim();
+  if (!botToken) return;
+  $("botBtn").disabled = true;
+  try {
+    const res = await fetch("/api/settings/bot-token", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botToken }),
+    });
+    const data = await res.json();
+    if (res.ok) { setMsg("Bot token saved.", "ok"); $("botToken").value = ""; loadSettings(); }
+    else setMsg(data.error || "Failed to save bot token.", "err");
+  } catch (e) { setMsg("Network error.", "err"); } finally { $("botBtn").disabled = false; }
 };
 
-$("hookClear").onclick = async () => {
-  if (!confirm("Clear the Discord webhook? Notifications will stop.")) return;
-  await fetch("/api/settings", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ discordWebhookUrl: "" }),
+$("botClear").onclick = async () => {
+  if (!confirm("Clear the bot token? Channel/thread posting will stop.")) return;
+  await fetch("/api/settings/bot-token", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botToken: "" }),
   });
-  setMsg("Webhook cleared.", "ok");
-  loadSettings();
+  setMsg("Bot token cleared.", "ok"); loadSettings();
+};
+
+$("dest").onsubmit = async (e) => {
+  e.preventDefault();
+  const type = $("destType").value;
+  const value = $("destVal").value.trim();
+  if (!value) return;
+  $("destBtn").disabled = true;
+  try {
+    const res = await fetch("/api/settings/default-destination", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, value }),
+    });
+    const data = await res.json();
+    if (res.ok) { setMsg("Default destination saved.", "ok"); $("destVal").value = ""; loadSettings(); }
+    else setMsg(data.error || "Failed to save destination.", "err");
+  } catch (e) { setMsg("Network error.", "err"); } finally { $("destBtn").disabled = false; }
+};
+
+$("destClear").onclick = async () => {
+  if (!confirm("Clear the default destination?")) return;
+  await fetch("/api/settings/default-destination", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "none" }),
+  });
+  setMsg("Default destination cleared.", "ok"); loadSettings();
 };
 
 $("add").onsubmit = async (e) => {
   e.preventDefault();
   const url = $("url").value.trim();
   if (!url) return;
-  const webhookUrl = $("addHook").value.trim();
   $("addBtn").disabled = true;
   setMsg("Adding…");
   try {
     const res = await fetch("/api/playlists", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, webhookUrl }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
     });
     const data = await res.json();
-    if (res.ok) {
-      setMsg("Added " + (data.playlist?.name || "playlist") + ".", "ok");
-      $("url").value = "";
-      $("addHook").value = "";
-      load();
-    } else {
-      setMsg(data.error || "Failed to add playlist.", "err");
-    }
-  } catch (err) {
-    setMsg("Network error.", "err");
-  } finally {
-    $("addBtn").disabled = false;
-  }
+    if (res.ok) { setMsg("Added " + (data.playlist?.name || "playlist") + ".", "ok"); $("url").value = ""; load(); }
+    else setMsg(data.error || "Failed to add playlist.", "err");
+  } catch (e) { setMsg("Network error.", "err"); } finally { $("addBtn").disabled = false; }
 };
 
 load();

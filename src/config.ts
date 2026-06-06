@@ -6,6 +6,8 @@ dotenv.config();
 export interface Config {
   /** Optional seed, used only to populate settings on first run. */
   seedDiscordWebhookUrl?: string;
+  /** Optional seed for the Discord bot token, used only on first run. */
+  seedBotToken?: string;
   pollIntervalSeconds: number;
   /** Optional seed list, used only to populate state on first run. */
   seedPlaylistUrls: string[];
@@ -24,6 +26,7 @@ function parsePlaylists(): string[] {
 export function loadConfig(): Config {
   return {
     seedDiscordWebhookUrl: process.env.DISCORD_WEBHOOK_URL?.trim() || undefined,
+    seedBotToken: process.env.DISCORD_BOT_TOKEN?.trim() || undefined,
     pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS ?? "300"),
     seedPlaylistUrls: parsePlaylists(),
     stateFile: resolve(process.env.STATE_FILE ?? "./data/state.json"),

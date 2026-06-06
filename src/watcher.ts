@@ -53,20 +53,27 @@ export class Watcher {
       logger.info(
         `"${snapshot.name}": ${newTracks.length} new track(s) detected.`,
       );
-      const webhook = this.store.effectiveWebhook(url);
-      if (webhook) {
+      const destination = this.store.effectiveDestination(url);
+      const botToken = this.store.getBotToken();
+      if (!destination) {
+        logger.warn(
+          `No Discord destination configured — skipping ${newTracks.length} ` +
+            `notification(s). Set one in the web UI.`,
+        );
+      } else if (destination.type === "channel" && !botToken) {
+        logger.warn(
+          `"${snapshot.name}" posts to a channel/thread but no bot token is set ` +
+            `— skipping ${newTracks.length} notification(s).`,
+        );
+      } else {
         await notifyTracksAdded(
-          webhook,
+          destination,
+          botToken,
           newTracks.map((track) => ({
             playlistName: snapshot.name,
             playlistUrl: url,
             track,
           })),
-        );
-      } else {
-        logger.warn(
-          `No Discord webhook configured — skipping ${newTracks.length} ` +
-            `notification(s). Set one in the web UI.`,
         );
       }
     } else {

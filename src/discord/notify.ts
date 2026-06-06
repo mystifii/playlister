@@ -1,7 +1,9 @@
 import { logger } from "../logger.js";
 import type { Track } from "../apple/public-client.js";
+import type { Destination } from "../store/state.js";
 
 const APPLE_RED = 0xfa243c;
+const DISCORD_API = "https://discord.com/api/v10";
 
 interface AddedTrack {
   playlistName: string;
@@ -10,21 +12,23 @@ interface AddedTrack {
 }
 
 /**
- * Post one Discord embed per newly added track. We send them individually so
- * each shows its own artwork and link.
+ * Post one Discord embed per newly added track to the given destination
+ * (a webhook URL, or a channel/thread via the bot). Sent individually so each
+ * shows its own artwork and link.
  */
 export async function notifyTracksAdded(
-  webhookUrl: string,
+  destination: Destination,
+  botToken: string | undefined,
   added: AddedTrack[],
 ): Promise<void> {
   for (const item of added) {
-    await sendEmbed(webhookUrl, item);
+    await send(destination, botToken, buildEmbed(item));
   }
 }
 
-async function sendEmbed(webhookUrl: string, item: AddedTrack): Promise<void> {
+function buildEmbed(item: AddedTrack): Record<string, unknown> {
   const { track, playlistName, playlistUrl } = item;
-  const embed = {
+  return {
     author: { name: "Apple Music" },
     title: track.name,
     url: track.url,
@@ -33,18 +37,49 @@ async function sendEmbed(webhookUrl: string, item: AddedTrack): Promise<void> {
       : `**${track.artistName}**`,
     color: APPLE_RED,
     thumbnail: track.artworkUrl ? { url: track.artworkUrl } : undefined,
-    footer: {
-      text: `Added to ${playlistName}`,
-    },
+    footer: { text: `Added to ${playlistName}` },
     timestamp: new Date().toISOString(),
     fields: playlistUrl
       ? [{ name: "Playlist", value: `[${playlistName}](${playlistUrl})` }]
       : undefined,
   };
+}
 
-  const res = await fetch(webhookUrl, {
+async function send(
+  destination: Destination,
+  botToken: string | undefined,
+  embed: Record<string, unknown>,
+): Promise<void> {
+  if (destination.type === "webhook") {
+    if (!destination.webhookUrl) throw new Error("Webhook destination has no URL.");
+    return post(destination.webhookUrl, { "Content-Type": "application/json" }, embed, "webhook");
+  }
+
+  // type === "channel": post as the bot to the channel/thread id.
+  if (!destination.channelId) throw new Error("Channel destination has no id.");
+  if (!botToken) {
+    throw new Error(
+      "A channel/thread destination needs a Discord bot token — set one in the web UI.",
+    );
+  }
+  const url = `${DISCORD_API}/channels/${destination.channelId}/messages`;
+  return post(
+    url,
+    { "Content-Type": "application/json", Authorization: `Bot ${botToken}` },
+    embed,
+    "bot channel",
+  );
+}
+
+async function post(
+  url: string,
+  headers: Record<string, string>,
+  embed: Record<string, unknown>,
+  label: string,
+): Promise<void> {
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ embeds: [embed] }),
   });
 
@@ -53,12 +88,12 @@ async function sendEmbed(webhookUrl: string, item: AddedTrack): Promise<void> {
     const retryAfter = Number(res.headers.get("retry-after") ?? "1");
     logger.warn(`Discord rate limited; retrying in ${retryAfter}s.`);
     await sleep(retryAfter * 1000);
-    return sendEmbed(webhookUrl, item);
+    return post(url, headers, embed, label);
   }
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Discord webhook failed (${res.status}): ${body}`);
+    throw new Error(`Discord ${label} post failed (${res.status}): ${body}`);
   }
 }
 
