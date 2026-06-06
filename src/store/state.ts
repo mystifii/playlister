@@ -17,16 +17,31 @@ export interface Settings {
   discordWebhookUrl?: string;
 }
 
+/** A watched playlist: its URL plus an optional per-playlist webhook override. */
+export interface WatchedPlaylist {
+  url: string;
+  /** When set, notifications for this playlist go here instead of the default. */
+  webhookUrl?: string;
+}
+
 export interface AppState {
-  /** Configured playlist URLs — the source of truth for what we poll. */
-  watched: string[];
+  /** Configured playlists — the source of truth for what we poll. */
+  watched: WatchedPlaylist[];
   /** Snapshots keyed by playlist id. */
   snapshots: Record<string, PlaylistState>;
-  /** Runtime-editable settings managed from the web UI. */
+  /** Runtime-editable settings managed from the web UI (the default webhook). */
   settings: Settings;
 }
 
 const EMPTY_STATE: AppState = { watched: [], snapshots: {}, settings: {} };
+
+/** Older state stored `watched` as a plain string[]; normalise to objects. */
+function normaliseWatched(raw: unknown): WatchedPlaylist[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) =>
+    typeof entry === "string" ? { url: entry } : (entry as WatchedPlaylist),
+  );
+}
 
 export class Store {
   private state: AppState;
@@ -40,7 +55,7 @@ export class Store {
       const raw = readFileSync(this.file, "utf8");
       const parsed = JSON.parse(raw) as Partial<AppState>;
       return {
-        watched: parsed.watched ?? [],
+        watched: normaliseWatched(parsed.watched),
         snapshots: parsed.snapshots ?? {},
         settings: parsed.settings ?? {},
       };
@@ -63,22 +78,41 @@ export class Store {
 
   // ---- watched playlist list ----
 
-  getWatched(): string[] {
-    return [...this.state.watched];
+  getWatched(): WatchedPlaylist[] {
+    return this.state.watched.map((w) => ({ ...w }));
+  }
+
+  isWatched(url: string): boolean {
+    return this.state.watched.some((w) => w.url === url);
+  }
+
+  /** Resolve the effective webhook for a playlist URL (override or default). */
+  effectiveWebhook(url: string): string | undefined {
+    const entry = this.state.watched.find((w) => w.url === url);
+    return entry?.webhookUrl ?? this.state.settings.discordWebhookUrl;
   }
 
   /** Populate the watched list from a seed, only if it's currently empty. */
   seedWatched(urls: string[]): void {
     if (this.state.watched.length > 0 || urls.length === 0) return;
-    this.state.watched = [...new Set(urls)];
+    this.state.watched = [...new Set(urls)].map((url) => ({ url }));
     this.write();
     logger.info(`Seeded ${this.state.watched.length} playlist(s) from config.`);
   }
 
   /** Returns false if the URL was already watched. */
-  addWatched(url: string): boolean {
-    if (this.state.watched.includes(url)) return false;
-    this.state.watched.push(url);
+  addWatched(url: string, webhookUrl?: string): boolean {
+    if (this.isWatched(url)) return false;
+    this.state.watched.push({ url, webhookUrl: webhookUrl || undefined });
+    this.write();
+    return true;
+  }
+
+  /** Set or clear (pass undefined) a playlist's per-playlist webhook override. */
+  setPlaylistWebhook(url: string, webhookUrl: string | undefined): boolean {
+    const entry = this.state.watched.find((w) => w.url === url);
+    if (!entry) return false;
+    entry.webhookUrl = webhookUrl || undefined;
     this.write();
     return true;
   }
@@ -88,7 +122,7 @@ export class Store {
     const snap = this.state.snapshots[id];
     const before = this.state.watched.length;
     if (snap) {
-      this.state.watched = this.state.watched.filter((u) => u !== snap.url);
+      this.state.watched = this.state.watched.filter((w) => w.url !== snap.url);
     }
     delete this.state.snapshots[id];
     const changed =
@@ -100,7 +134,7 @@ export class Store {
   /** Remove a playlist by its URL (used when it isn't snapshotted yet). */
   removeByUrl(url: string): boolean {
     const before = this.state.watched.length;
-    this.state.watched = this.state.watched.filter((u) => u !== url);
+    this.state.watched = this.state.watched.filter((w) => w.url !== url);
     const changed = this.state.watched.length !== before;
     if (changed) this.write();
     return changed;
