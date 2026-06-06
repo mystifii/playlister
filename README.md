@@ -146,6 +146,15 @@ Everything lives in `/mnt/user/appdata/playlister/state.json`, so your config
 survives container updates and restarts. To update, just re-pull the image from
 Unraid's Docker tab.
 
+> **Playlists/webhooks disappear after an update?** That means `/app/data`
+> isn't mapped to a host path. Without the mapping, Docker writes state to an
+> *anonymous volume* that survives restarts but is discarded when the container
+> is recreated on update. Edit the container and add a **Path**: container
+> `/app/data` → host `/mnt/user/appdata/playlister` (Read/Write), then Apply.
+> (Re-importing the template URL above sets this for you.) On startup the log
+> prints `Loaded state from /app/data/state.json …` — if it instead says
+> "starting fresh" every update, the mapping is still missing.
+
 ### With systemd
 
 See [`deploy/playlister.service`](deploy/playlister.service) for an example

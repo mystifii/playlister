@@ -54,14 +54,22 @@ export class Store {
     try {
       const raw = readFileSync(this.file, "utf8");
       const parsed = JSON.parse(raw) as Partial<AppState>;
-      return {
+      const state: AppState = {
         watched: normaliseWatched(parsed.watched),
         snapshots: parsed.snapshots ?? {},
         settings: parsed.settings ?? {},
       };
+      logger.info(
+        `Loaded state from ${this.file} (${state.watched.length} playlist(s), ` +
+          `webhook ${state.settings.discordWebhookUrl ? "set" : "unset"}).`,
+      );
+      return state;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        logger.info(`No existing state at ${this.file}; starting fresh.`);
+        logger.info(
+          `No existing state at ${this.file} — starting fresh. If you expected ` +
+            `saved playlists here, check that this path is on a persistent volume.`,
+        );
         return structuredClone(EMPTY_STATE);
       }
       throw err;
