@@ -13,15 +13,31 @@ export interface PlaylistState {
   lastChecked?: string;
 }
 
-export interface Settings {
-  discordWebhookUrl?: string;
+/**
+ * Where a notification is delivered: either a Discord webhook URL, or a
+ * channel/thread the bot posts to (a thread is just a channel with its own id).
+ */
+export type DestinationType = "webhook" | "channel";
+export interface Destination {
+  type: DestinationType;
+  /** Set when type === "webhook". */
+  webhookUrl?: string;
+  /** Set when type === "channel" — a channel or thread id. */
+  channelId?: string;
 }
 
-/** A watched playlist: its URL plus an optional per-playlist webhook override. */
+export interface Settings {
+  /** Discord bot token, required for any "channel" destination. */
+  botToken?: string;
+  /** Default destination for playlists without their own override. */
+  defaultDestination?: Destination;
+}
+
+/** A watched playlist: its URL plus an optional per-playlist destination. */
 export interface WatchedPlaylist {
   url: string;
   /** When set, notifications for this playlist go here instead of the default. */
-  webhookUrl?: string;
+  destination?: Destination;
 }
 
 export interface AppState {
@@ -29,18 +45,46 @@ export interface AppState {
   watched: WatchedPlaylist[];
   /** Snapshots keyed by playlist id. */
   snapshots: Record<string, PlaylistState>;
-  /** Runtime-editable settings managed from the web UI (the default webhook). */
+  /** Runtime-editable settings managed from the web UI. */
   settings: Settings;
 }
 
 const EMPTY_STATE: AppState = { watched: [], snapshots: {}, settings: {} };
 
-/** Older state stored `watched` as a plain string[]; normalise to objects. */
+/**
+ * Normalise a watched entry across schema versions:
+ *   "url"                              (oldest)
+ *   { url, webhookUrl }                (per-playlist webhook)
+ *   { url, destination }               (current)
+ */
 function normaliseWatched(raw: unknown): WatchedPlaylist[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((entry) =>
-    typeof entry === "string" ? { url: entry } : (entry as WatchedPlaylist),
-  );
+  return raw.map((entry): WatchedPlaylist => {
+    if (typeof entry === "string") return { url: entry };
+    const e = entry as { url: string; destination?: Destination; webhookUrl?: string };
+    if (e.destination) return { url: e.url, destination: e.destination };
+    if (e.webhookUrl) {
+      return { url: e.url, destination: { type: "webhook", webhookUrl: e.webhookUrl } };
+    }
+    return { url: e.url };
+  });
+}
+
+/** Migrate older settings (a bare discordWebhookUrl) to the destination model. */
+function normaliseSettings(raw: unknown): Settings {
+  const s = (raw ?? {}) as {
+    botToken?: string;
+    defaultDestination?: Destination;
+    discordWebhookUrl?: string;
+  };
+  return {
+    botToken: s.botToken,
+    defaultDestination:
+      s.defaultDestination ??
+      (s.discordWebhookUrl
+        ? { type: "webhook", webhookUrl: s.discordWebhookUrl }
+        : undefined),
+  };
 }
 
 export class Store {
@@ -57,11 +101,12 @@ export class Store {
       const state: AppState = {
         watched: normaliseWatched(parsed.watched),
         snapshots: parsed.snapshots ?? {},
-        settings: parsed.settings ?? {},
+        settings: normaliseSettings(parsed.settings),
       };
       logger.info(
         `Loaded state from ${this.file} (${state.watched.length} playlist(s), ` +
-          `webhook ${state.settings.discordWebhookUrl ? "set" : "unset"}).`,
+          `bot token ${state.settings.botToken ? "set" : "unset"}, ` +
+          `default destination ${state.settings.defaultDestination ? "set" : "unset"}).`,
       );
       return state;
     } catch (err) {
@@ -94,10 +139,10 @@ export class Store {
     return this.state.watched.some((w) => w.url === url);
   }
 
-  /** Resolve the effective webhook for a playlist URL (override or default). */
-  effectiveWebhook(url: string): string | undefined {
+  /** Resolve the destination for a playlist URL (its override, else default). */
+  effectiveDestination(url: string): Destination | undefined {
     const entry = this.state.watched.find((w) => w.url === url);
-    return entry?.webhookUrl ?? this.state.settings.discordWebhookUrl;
+    return entry?.destination ?? this.state.settings.defaultDestination;
   }
 
   /** Populate the watched list from a seed, only if it's currently empty. */
@@ -109,18 +154,18 @@ export class Store {
   }
 
   /** Returns false if the URL was already watched. */
-  addWatched(url: string, webhookUrl?: string): boolean {
+  addWatched(url: string, destination?: Destination): boolean {
     if (this.isWatched(url)) return false;
-    this.state.watched.push({ url, webhookUrl: webhookUrl || undefined });
+    this.state.watched.push({ url, destination });
     this.write();
     return true;
   }
 
-  /** Set or clear (pass undefined) a playlist's per-playlist webhook override. */
-  setPlaylistWebhook(url: string, webhookUrl: string | undefined): boolean {
+  /** Set or clear (pass undefined) a playlist's per-playlist destination. */
+  setPlaylistDestination(url: string, destination: Destination | undefined): boolean {
     const entry = this.state.watched.find((w) => w.url === url);
     if (!entry) return false;
-    entry.webhookUrl = webhookUrl || undefined;
+    entry.destination = destination;
     this.write();
     return true;
   }
@@ -150,21 +195,38 @@ export class Store {
 
   // ---- settings ----
 
-  getWebhookUrl(): string | undefined {
-    return this.state.settings.discordWebhookUrl;
+  getBotToken(): string | undefined {
+    return this.state.settings.botToken;
   }
 
-  setWebhookUrl(url: string | undefined): void {
-    this.state.settings.discordWebhookUrl = url || undefined;
+  setBotToken(token: string | undefined): void {
+    this.state.settings.botToken = token || undefined;
     this.write();
   }
 
-  /** Populate the webhook from a seed, only if one isn't already set. */
-  seedWebhookUrl(url: string | undefined): void {
-    if (this.state.settings.discordWebhookUrl || !url) return;
-    this.state.settings.discordWebhookUrl = url;
+  /** Populate the bot token from a seed, only if one isn't already set. */
+  seedBotToken(token: string | undefined): void {
+    if (this.state.settings.botToken || !token) return;
+    this.state.settings.botToken = token;
     this.write();
-    logger.info("Seeded Discord webhook from config.");
+    logger.info("Seeded Discord bot token from config.");
+  }
+
+  getDefaultDestination(): Destination | undefined {
+    return this.state.settings.defaultDestination;
+  }
+
+  setDefaultDestination(destination: Destination | undefined): void {
+    this.state.settings.defaultDestination = destination;
+    this.write();
+  }
+
+  /** Seed the default destination from a webhook URL, only if none is set. */
+  seedDefaultWebhook(url: string | undefined): void {
+    if (this.state.settings.defaultDestination || !url) return;
+    this.state.settings.defaultDestination = { type: "webhook", webhookUrl: url };
+    this.write();
+    logger.info("Seeded default Discord webhook from config.");
   }
 
   // ---- snapshots ----

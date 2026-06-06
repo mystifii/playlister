@@ -43,29 +43,57 @@ npm install && npm run build && npm start
 
 Go to <http://localhost:8080>. From there:
 
-- **Set your default Discord webhook.** In Discord: **Server Settings →
-  Integrations → Webhooks → New Webhook**, pick the channel, **Copy Webhook
-  URL**, and paste it into the *Default Discord webhook* box. (The stored token
-  is masked in the UI and never sent back to the browser.)
-- **Optionally give a playlist its own webhook.** Each playlist can override the
-  default to post to a different channel — set it when adding a playlist, or via
-  **edit** on the playlist afterwards. Playlists without an override use the
-  default.
+- **Choose how notifications are delivered.** Each notification goes to a
+  *destination*, which is either a **webhook** or a **bot channel/thread** (see
+  [Discord delivery](#discord-delivery) below). Set a **default destination**,
+  and optionally override it **per playlist** via **edit** on the playlist row.
 - **Add playlists.** Grab a playlist's share link in the Music app (**⋯ →
   Share → Copy Link**) — make sure it's shared/public — and paste it in. It
   looks like `https://music.apple.com/us/playlist/my-mix/pl.u-xxxxxxxxxxxx`.
   The UI validates the link, loads its name and track count immediately, and
   starts watching it. Remove a playlist with one click.
 
-Both the webhook and the watch list are saved to `state.json`, and the running
-bot picks up changes on its next poll — no restart needed.
+Settings and the watch list are saved to `state.json`, and the running bot
+picks up changes on its next poll — no restart needed.
 
 > The UI has no authentication — keep it on localhost or a trusted network, or
 > put it behind a reverse proxy with auth if you expose it.
 
-That's it. New songs added to any watched playlist will show up in your Discord
-channel. (If no webhook is set yet, the bot still tracks playlists and logs a
-reminder; it just won't post until you add one.)
+That's it. New songs added to any watched playlist will show up in Discord. (If
+no destination is set yet, the bot still tracks playlists and logs a reminder;
+it just won't post until you configure one.)
+
+## Discord delivery
+
+A *destination* is either of:
+
+- **Webhook** — paste a channel webhook URL (**Server Settings → Integrations →
+  Webhooks → New Webhook → Copy Webhook URL**). Simplest; no bot needed.
+- **Bot channel / thread** — post as a Discord bot to a specific channel **or
+  thread**. Use this to deliver notifications **into a thread**.
+
+You set one **default** destination, and can **override it per playlist**, so
+different playlists can post to different channels/threads.
+
+### Using the bot (for threads)
+
+1. **Create a bot.** Go to the
+   [Discord Developer Portal](https://discord.com/developers/applications) →
+   **New Application** → **Bot** → **Reset Token** → copy the token. Paste it
+   into the *Discord bot token* box in the web UI (or seed `DISCORD_BOT_TOKEN`).
+2. **Invite it to your server.** Under **OAuth2 → URL Generator**, tick the
+   `bot` scope and the **Send Messages** + **Send Messages in Threads** + **View
+   Channel** permissions, open the generated URL, and add it to your server.
+   Make sure it has access to the target channel/thread.
+3. **Point a destination at a thread.** Create/open the thread in Discord,
+   **Copy Link** (or right-click → **Copy ID** with Developer Mode on), and set
+   it as the channel/thread value — either the default destination or a
+   per-playlist override. The bot posts your "new song" embeds into that thread.
+
+> The bot only needs to *send* messages, so Playlister talks to Discord's REST
+> API and does **not** keep a gateway connection open — the bot will appear
+> offline in the member list but can still post. Bot tokens are masked in the
+> UI and never returned to the browser.
 
 ## Configuration reference
 
@@ -78,7 +106,8 @@ the webhook and playlists are normally managed in the web UI (see
 | `WEB_PORT` | Port for the management web UI (default `8080`). |
 | `POLL_INTERVAL_SECONDS` | How often to check (default `300`). |
 | `STATE_FILE` | Where settings + watch list + snapshots are saved (default `./data/state.json`). |
-| `DISCORD_WEBHOOK_URL` | *Optional.* Seeds the webhook on the **first run** only; afterwards the web UI is the source of truth. |
+| `DISCORD_WEBHOOK_URL` | *Optional.* Seeds the default webhook destination on the **first run** only; afterwards the web UI is the source of truth. |
+| `DISCORD_BOT_TOKEN` | *Optional.* Seeds the bot token on the **first run** only. Needed only for channel/thread destinations. |
 | `PLAYLISTS` | *Optional.* Seed playlist URLs (comma/newline separated) used only on the **first run** to pre-populate the watch list. After that, manage playlists in the web UI. |
 
 ## Running

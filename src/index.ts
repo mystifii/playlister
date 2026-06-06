@@ -13,17 +13,18 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const store = new Store(config.stateFile);
 
-  // Populate the watch list and webhook from env the first time only; after
-  // that they're managed through the web UI and live in state.json.
+  // Populate the watch list and Discord settings from env the first time only;
+  // after that they're managed through the web UI and live in state.json.
   store.seedWatched(config.seedPlaylistUrls);
-  store.seedWebhookUrl(config.seedDiscordWebhookUrl);
+  store.seedBotToken(config.seedBotToken);
+  store.seedDefaultWebhook(config.seedDiscordWebhookUrl);
 
   const client = new AppleMusicPublicClient();
   const watcher = new Watcher(store, client);
 
-  if (!store.getWebhookUrl()) {
+  if (!store.getDefaultDestination()) {
     logger.warn(
-      "No Discord webhook set yet — configure one in the web UI to receive notifications.",
+      "No default Discord destination set yet — configure one in the web UI to receive notifications.",
     );
   }
 
